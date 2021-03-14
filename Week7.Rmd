@@ -1,0 +1,187 @@
+---
+title: "Twitter US Airline Sentiment"
+author: "Cansu Tatar"
+date: "3/13/2021"
+output: ioslides_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+library(dplyr)
+library(readr)
+library(tidyr)
+library(rtweet)
+library(writexl)
+library(readxl)
+library(tidytext)
+library(textdata)
+library(ggplot2)
+library(textdata)
+library(scales)
+library(wordcloud2)
+
+Tweetsdata <- read_excel("Data /Tweetsdata.xlsx")
+##### Wrangle #####
+Tweets_American <-
+  Tweetsdata %>%
+  select(tweet_created, tweet_location, text) %>%
+  mutate(Airline = "American") %>%
+  relocate(Airline)
+
+Tweets_United <-
+  Tweetsdata %>%
+  select(tweet_created, tweet_location, text) %>%
+  mutate(Airline = "United") %>%
+  relocate(Airline)
+tweets<- bind_rows(Tweets_American, Tweets_United)
+
+tweets<- na.omit(tweets)
+
+tweet_tokens <- 
+  tweets %>%
+  unnest_tokens(output = word, 
+                input = text, 
+                token = "tweets")
+tweets_counts <- count(tweet_tokens, word, sort = TRUE)
+
+tidy_tweets <-
+  tweet_tokens %>%
+  anti_join(stop_words, by = "word")%>%
+  filter(!word == "im")
+tweets_count<-count(tidy_tweets, word, sort = TRUE)
+
+bing <- get_sentiments("bing")
+sentiment_bing <- inner_join(tidy_tweets, bing, by = "word")
+summary_bing <- count(sentiment_bing, sentiment, sort = TRUE)
+
+summary_bing <- sentiment_bing %>% 
+  group_by(Airline) %>% 
+  count(sentiment, sort = TRUE) %>% 
+  spread(sentiment, n) %>%
+  mutate(sentiment = positive - negative) %>%
+  mutate(lexicon = "bing") %>%
+  relocate(lexicon)
+
+summary_bing2 <- sentiment_bing %>% 
+  group_by(Airline) %>% 
+  count(sentiment, sort = TRUE) %>% 
+  mutate(method = "bing")
+
+loughran <- get_sentiments("loughran")
+sentiment_loughran <- inner_join(tidy_tweets, loughran, by = "word")
+summary_loughran <- sentiment_loughran %>% 
+  group_by(Airline) %>% 
+  count(sentiment, sort = TRUE) %>% 
+  spread(sentiment, n) %>%
+  mutate(sentiment = positive - negative) %>%
+  mutate(lexicon = "loughran") %>%
+  relocate(lexicon)
+
+summary_loughran2 <- sentiment_loughran %>% 
+  filter(sentiment %in% c("positive", "negative")) %>%
+  group_by(Airline) %>% 
+  count(sentiment, sort = TRUE) %>% 
+  mutate(method = "loughran") 
+
+summary_sentiment <- bind_rows(summary_bing2,
+                               summary_loughran2) %>%
+  arrange(method, Airline) %>%
+  relocate(method)
+
+total_counts <- 
+  summary_sentiment %>%
+  group_by(method, Airline) %>%
+  summarise(total = sum(n))
+
+sentiment_counts <- left_join(summary_sentiment, total_counts)
+
+sentiment_percents <- sentiment_counts %>%
+  mutate(percent = n/total * 100)
+
+```
+
+## Purpose
+
+The purpose of this independent analysis is to analyze how travelers in February 2015 expressed their feelings about US airlines on Twitter.
+
+This data came from the Crowdflower's Data for Everyone library. However, I reformatted the data a little bit to provide a comprehensive analysis.
+
+## Guiding Questions
+
+-   What is the public sentiment expressed toward the US Airlines in 2015?
+-   How does sentiment show differences for United and American Airlines?
+
+## Mehtod
+
+**Data Source**: tweet created date, tweet location, and tweet text.
+
+**Data Processing**: Wrangle, tokenized, and tidied text
+
+**Data Analysis**: Word Counts,Term Frequency-Inverse Document Frequency, Sentiment Analysis (lexicons: bing and loughran)
+
+## Tweets by Days
+
+```{r, eval=T, echo=F}
+ts_plot(tweets, by="days")
+```
+
+## Frequently Used Words in Tweets
+
+```{r, eval=T, echo=F}
+tweets_count %>%
+  filter(n > 1000) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() + 
+  labs(x = "Word Counts", y = NULL, title = "Frequently Used Words") + 
+  theme_minimal()
+```
+
+## Sample from Tweets
+@VirginAmerica you're the best!! Whenever I (begrudgingly) use any other airline I'm delayed and Late Flight :(
+
+@VirginAmerica Thanks! Good times there and back! #Vodkatonics the entire flight...
+
+@AmericanAir leaving over 20 minutes Late Flight. No warnings or communication until we were 15 minutes Late Flight. That's called shitty customer svc
+
+@AmericanAir thx for nothing on getting us out of the country and back to US. Broken plane? Come on. Get another one.
+
+# Sentiment Analysis
+
+## Bing
+
+Bing lexicon did not show a difference between American and United States Airlines. Therefore, I've decided to move with the loughran lexicon.
+
+
+```{r,eval=T, echo=F}
+summary_bing
+```
+
+## Loughran
+```{r, eval=T, echo=F}
+summary_loughran
+
+```
+
+## Public Sentiment on Twitter
+```{r, eval=T, echo=F}
+sentiment_percents %>%
+  ggplot(aes(x = Airline, y = percent, fill=sentiment)) +
+  geom_bar(width = .8, stat = "identity") +
+  facet_wrap(~method, ncol = 1) +
+  coord_flip() +
+  labs(title = "Public Sentiment on Twitter", 
+       subtitle = "American & United",
+       x = "Airline", 
+       y = "Percentage of Words")
+```
+
+
+
+
+
+
+
